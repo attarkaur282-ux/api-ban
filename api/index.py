@@ -6,7 +6,7 @@ import random
 import string
 from datetime import datetime
 
-# Simple in-memory storage (Vercel serverless restart पर डेटा reset होगा)
+# In-memory storage (Vercel serverless restart पर data reset होगा)
 USERS = {}
 SESSIONS = {}
 
@@ -30,7 +30,6 @@ class handler(BaseHTTPRequestHandler):
         self._set_headers(200)
     
     def do_GET(self):
-        # Parse path and query
         parsed_path = self.path.split('?')
         path = parsed_path[0]
         query = {}
@@ -79,11 +78,11 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid token'}).encode())
             return
         
-        # HOME endpoint
+        # Home endpoint
         self._set_headers(200)
         self.wfile.write(json.dumps({
             'status': 'online',
-            'message': 'API is working',
+            'message': 'API is working!',
             'endpoints': ['/register (POST)', '/login (POST)', '/attack (GET)', '/status (GET)'],
             'created_by': 'SATVIR'
         }).encode())
