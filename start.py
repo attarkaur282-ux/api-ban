@@ -4,33 +4,35 @@ import time
 import random
 import string
 from datetime import datetime
-from http.cookies import SimpleCookie
 
-# Simple in-memory storage (for Vercel, use external DB for real persistence)
-USERS_FILE = 'pass.json'
+# Simple in-memory storage
+USERS = {}
 SESSIONS = {}
 
-def load_users():
-    try:
-        with open('pass.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_users(users):
-    with open('pass.json', 'w') as f:
-        json.dump(users, f, indent=2)
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+def hash_password(pwd):
+    return hashlib.sha256(pwd.encode()).hexdigest()
 
 def generate_token():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=32))
 
-def handler(request):
-    method = request.method
-    path = request.path
-    query = request.query
+def handler(request, context):
+    """Vercel serverless function handler"""
+    
+    method = request.method or 'GET'
+    path = request.path or '/'
+    
+    # Parse query string
+    query = {}
+    if request.query:
+        query = request.query
+    
+    # Parse body for POST
+    body = {}
+    if request.body:
+        try:
+            body = json.loads(request.body)
+        except:
+            pass
     
     # CORS headers
     headers = {
@@ -41,96 +43,71 @@ def handler(request):
     }
     
     if method == 'OPTIONS':
-        return {'statusCode': 200, 'headers': headers, 'body': ''}
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': ''
+        }
     
     # ========== REGISTER ==========
     if path == '/register' and method == 'POST':
-        try:
-            body = json.loads(request.body or '{}')
-            username = body.get('username', '').strip()
-            password = body.get('password', '').strip()
-            
-            if not username or not password:
-                return {
-                    'statusCode': 400,
-                    'headers': headers,
-                    'body': json.dumps({'error': 'Username and password required'})
-                }
-            
-            users = load_users()
-            if username in users:
-                return {
-                    'statusCode': 400,
-                    'headers': headers,
-                    'body': json.dumps({'error': 'Username already exists'})
-                }
-            
-            users[username] = {
-                'password': hash_password(password),
-                'created_at': datetime.now().isoformat(),
-                'api_calls': 0
-            }
-            save_users(users)
-            
+        username = body.get('username', '').strip()
+        password = body.get('password', '').strip()
+        
+        if not username or not password:
             return {
-                'statusCode': 200,
+                'statusCode': 400,
                 'headers': headers,
-                'body': json.dumps({
-                    'status': 'success',
-                    'message': 'Registration successful',
-                    'username': username
-                })
+                'body': json.dumps({'error': 'Username and password required'})
             }
-        except Exception as e:
+        
+        if username in USERS:
             return {
-                'statusCode': 500,
+                'statusCode': 400,
                 'headers': headers,
-                'body': json.dumps({'error': str(e)})
+                'body': json.dumps({'error': 'Username exists'})
             }
+        
+        USERS[username] = {
+            'password': hash_password(password),
+            'created': datetime.now().isoformat()
+        }
+        
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps({'status': 'success', 'message': 'Registered', 'username': username})
+        }
     
     # ========== LOGIN ==========
     if path == '/login' and method == 'POST':
-        try:
-            body = json.loads(request.body or '{}')
-            username = body.get('username', '').strip()
-            password = body.get('password', '').strip()
-            
-            users = load_users()
-            if username not in users:
-                return {
-                    'statusCode': 401,
-                    'headers': headers,
-                    'body': json.dumps({'error': 'Invalid credentials'})
-                }
-            
-            if users[username]['password'] != hash_password(password):
-                return {
-                    'statusCode': 401,
-                    'headers': headers,
-                    'body': json.dumps({'error': 'Invalid credentials'})
-                }
-            
-            token = generate_token()
-            SESSIONS[token] = {'username': username, 'expires': time.time() + 86400}
-            
+        username = body.get('username', '').strip()
+        password = body.get('password', '').strip()
+        
+        if username not in USERS:
             return {
-                'statusCode': 200,
+                'statusCode': 401,
                 'headers': headers,
-                'body': json.dumps({
-                    'status': 'success',
-                    'message': 'Login successful',
-                    'token': token,
-                    'username': username
-                })
+                'body': json.dumps({'error': 'Invalid credentials'})
             }
-        except Exception as e:
+        
+        if USERS[username]['password'] != hash_password(password):
             return {
-                'statusCode': 500,
+                'statusCode': 401,
                 'headers': headers,
-                'body': json.dumps({'error': str(e)})
+                'body': json.dumps({'error': 'Invalid credentials'})
             }
+        
+        token = generate_token()
+        SESSIONS[token] = {'username': username, 'expires': time.time() + 86400}
+        
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps({'status': 'success', 'token': token, 'username': username})
+        }
     
-    # ========== ATTACK API (Protected) ==========
+    # ========== ATTACK ==========
     if path == '/attack' and method == 'GET':
         token = query.get('token', '')
         target = query.get('target', '')
@@ -139,7 +116,7 @@ def handler(request):
             return {
                 'statusCode': 401,
                 'headers': headers,
-                'body': json.dumps({'error': 'Invalid or expired token'})
+                'body': json.dumps({'error': 'Invalid token'})
             }
         
         if not target:
@@ -149,15 +126,8 @@ def handler(request):
                 'body': json.dumps({'error': 'Target URL required'})
             }
         
-        # Update user stats
-        session = SESSIONS[token]
-        username = session['username']
-        users = load_users()
-        if username in users:
-            users[username]['api_calls'] = users[username].get('api_calls', 0) + 1
-            save_users(users)
+        username = SESSIONS[token]['username']
         
-        # Return attack response
         return {
             'statusCode': 200,
             'headers': headers,
@@ -168,26 +138,18 @@ def handler(request):
                 'username': username,
                 'time': datetime.now().isoformat(),
                 'attack_id': generate_token()[:16],
-                'note': 'This is a simulated attack response',
                 'created_by': 'SATVIR'
-            }, indent=2)
+            })
         }
     
-    # ========== STATUS API ==========
+    # ========== STATUS ==========
     if path == '/status' and method == 'GET':
         token = query.get('token', '')
         if token in SESSIONS:
-            username = SESSIONS[token]['username']
-            users = load_users()
             return {
                 'statusCode': 200,
                 'headers': headers,
-                'body': json.dumps({
-                    'status': 'active',
-                    'username': username,
-                    'api_calls': users.get(username, {}).get('api_calls', 0),
-                    'message': 'You are logged in'
-                })
+                'body': json.dumps({'status': 'active', 'username': SESSIONS[token]['username']})
             }
         return {
             'statusCode': 401,
@@ -195,9 +157,14 @@ def handler(request):
             'body': json.dumps({'error': 'Invalid token'})
         }
     
-    # ========== DEFAULT ==========
+    # ========== DEFAULT / HOME ==========
     return {
-        'statusCode': 404,
+        'statusCode': 200,
         'headers': headers,
-        'body': json.dumps({'error': 'Not found'})
+        'body': json.dumps({
+            'status': 'online',
+            'message': 'API is working',
+            'endpoints': ['/register', '/login', '/attack', '/status'],
+            'created_by': 'SATVIR'
+        })
     }
