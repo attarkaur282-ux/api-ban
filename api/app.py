@@ -41,14 +41,17 @@ class handler(BaseHTTPRequestHandler):
         if path == '/attack':
             token = query.get('token', '')
             target = query.get('target', '')
+            
             if not token or token not in SESSIONS:
                 self._set_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid token'}).encode())
                 return
+            
             if not target:
                 self._set_headers(400)
                 self.wfile.write(json.dumps({'error': 'Target URL required'}).encode())
                 return
+            
             self._set_headers(200)
             self.wfile.write(json.dumps({
                 'status': 'attack_started',
@@ -91,14 +94,17 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/register':
             username = data.get('username', '').strip()
             password = data.get('password', '').strip()
+            
             if not username or not password:
                 self._set_headers(400)
                 self.wfile.write(json.dumps({'error': 'Username and password required'}).encode())
                 return
+            
             if username in USERS:
                 self._set_headers(400)
                 self.wfile.write(json.dumps({'error': 'Username exists'}).encode())
                 return
+            
             USERS[username] = {
                 'password': hash_password(password),
                 'created': datetime.now().isoformat()
@@ -110,10 +116,12 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/login':
             username = data.get('username', '').strip()
             password = data.get('password', '').strip()
+            
             if username not in USERS or USERS[username]['password'] != hash_password(password):
                 self._set_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode())
                 return
+            
             token = generate_token()
             SESSIONS[token] = {'username': username, 'expires': time.time() + 86400}
             self._set_headers(200)
