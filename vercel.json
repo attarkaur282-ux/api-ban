@@ -1,35 +1,15 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "start.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
+  "functions": {
+    "api/start.py": {
+      "runtime": "python3.9",
+      "maxDuration": 10
     }
-  ],
+  },
   "routes": [
     {
-      "src": "/register",
-      "dest": "start.py"
-    },
-    {
-      "src": "/login",
-      "dest": "start.py"
-    },
-    {
-      "src": "/attack",
-      "dest": "start.py"
-    },
-    {
-      "src": "/status",
-      "dest": "start.py"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "/api/start.py"
     }
   ]
 }
